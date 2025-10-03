@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +16,17 @@ import (
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 )
+
+func MakeRandString() (string, error) {
+	buf := make([]byte, 32)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return "", err
+	}
+
+	result := base64.RawURLEncoding.EncodeToString(buf)
+	return result, nil
+}
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
 	videoIDString := r.PathValue("videoID")
@@ -58,11 +71,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, 400, "Error parsing MIME media type", errors.New("Unsupported MIME type"))
 		return
 	}
-	// data, err := io.ReadAll(file)
-	// if err != nil {
-	// 	respondWithError(w, 500, "Error reading file", err)
-	// 	return
-	// }
 
 	dbVideo, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -70,11 +78,16 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	id, err := MakeRandString()
+	if err != nil {
+		respondWithError(w, 500, "Error while generating random ID for file", err)
+	}
 	ext := strings.Split(mediaType, "/")[1]
-	path := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoIDString, ext))
+	filename := fmt.Sprintf("%s.%s", id, ext)
+	filePath := filepath.Join(cfg.assetsRoot, filename)
 
-	f, err := os.Create(path)
-	if err != err {
+	f, err := os.Create(filePath)
+	if err != nil {
 		respondWithError(w, 500, "Error creating file", err)
 		return
 	}
@@ -85,19 +98,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	tURL := filepath.Join("/", path)
+	tURL := fmt.Sprintf("http://localhost:8091/assets/%v", filename)
 	dbVideo.ThumbnailURL = &tURL
+	fmt.Printf("tURL: %v\n", tURL)
 
-	// // t := thumbnail{
-	// // 	data:      buf,
-	// // 	mediaType: mediaType,
-	// // }
-	// b64 := base64.StdEncoding.EncodeToString(data)
-	//
-	// thumbnailURL := fmt.Sprintf("data:%s;base64;%s", mediaType, b64)
-	// dbVideo.ThumbnailURL = &thumbnailURL
-	//
 	cfg.db.UpdateVideo(dbVideo)
-	//
 	respondWithJSON(w, http.StatusOK, dbVideo)
 }
